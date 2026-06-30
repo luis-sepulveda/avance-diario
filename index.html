@@ -711,6 +711,35 @@ let REGIONES_VISTAS = new Set();
 // poder sembrarlos en cero en la tarjeta aunque a esta hora solo tengan
 // colacion (asi Terry y Victor de VALPO aparecen desde temprano).
 let SUPERVISORES_VISTOS = new Map();   // nombre supervisor -> REGION
+
+// ── PLANTEL BASE: equipo fijo que SIEMPRE se muestra, aunque la data venga
+// vacia o falte una region. Asi la tarjeta de supervisores muestra los 4 en
+// cero y los botones de region (VALPO/RM) aparecen desde temprano.
+// Si entra/sale un supervisor, se edita SOLO aca. Los nombres deben coincidir
+// con los que escribe procesar.py (mapeos.json); el match igual es tolerante
+// a mayusculas/acentos via normSup().
+const PLANTEL_BASE = [
+  { nombre: 'Terry Riverol',     region: 'VALPO' },
+  { nombre: 'Víctor Moreira',    region: 'VALPO' },
+  { nombre: 'Alfredo cumetbatch', region: 'RM' },
+  { nombre: 'Ruben Murillo',     region: 'RM' },
+];
+// Normaliza un nombre de supervisor: sin acentos, MAYUSCULAS, espacios colapsados.
+function normSup(s){
+  return (s==null?'':String(s)).normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+         .toUpperCase().replace(/\s+/g,' ').trim();
+}
+// nombre normalizado -> nombre canonico (como se quiere MOSTRAR).
+const CANON_SUP = new Map(PLANTEL_BASE.map(p => [normSup(p.nombre), p.nombre]));
+// Siembra el plantel base en REGIONES_VISTAS y SUPERVISORES_VISTOS. Idempotente:
+// no pisa a un supervisor que ya venga de la data.
+function sembrarPlantelBase(){
+  PLANTEL_BASE.forEach(p => {
+    REGIONES_VISTAS.add(p.region);
+    if (!SUPERVISORES_VISTOS.has(p.nombre)) SUPERVISORES_VISTOS.set(p.nombre, p.region);
+  });
+}
+
 function filtrarTipos(rows){
   if (!Array.isArray(rows)) return rows;
   // Capturar las regiones presentes ANTES de botar colaciones, para que los
@@ -862,7 +891,11 @@ function normFecha(val) {
 }
 
 function getSup(r) {
-  return r['supervisor'] || r['Supervisor'] || r['SUPERVISOR'] || null;
+  const raw = r['supervisor'] || r['Supervisor'] || r['SUPERVISOR'] || null;
+  if (!raw) return null;
+  // Si el supervisor esta en el plantel base, devolvemos su nombre canonico
+  // (mismo string para data y siembra) para que NO se dupliquen en la tarjeta.
+  return CANON_SUP.get(normSup(raw)) || raw;
 }
 
 function getMarca(r) {
@@ -980,6 +1013,7 @@ function buildMarcaCiudadFilter(data) {
 function pct(n, total) { return total ? (n/total*100).toFixed(1)+'%' : '0%'; }
 
 function renderDashboard(data, filename) {
+  sembrarPlantelBase();   // garantiza 4 supers + 2 regiones siempre, aunque la data venga vacia/parcial
   const dataActiva = data.filter(r => r['Estado'] !== 'Suspendido');
   const now = new Date();
   const timeStr = now.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'}) + ' · ' + now.toLocaleDateString('es-CL');
